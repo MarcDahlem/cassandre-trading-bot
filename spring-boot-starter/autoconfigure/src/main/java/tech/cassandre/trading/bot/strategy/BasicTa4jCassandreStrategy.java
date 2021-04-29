@@ -87,14 +87,12 @@ public abstract class BasicTa4jCassandreStrategy extends GenericCassandreStrateg
         if (getRequestedCurrencyPairs().contains(ticker.getCurrencyPair())) {
             getLastTickers().put(ticker.getCurrencyPair(), ticker);
             // If there is no bar or if the duration between the last bar and the ticker is enough.
-            if (lastAddedBarTimestamp == null
-                    || ticker.getTimestamp().isEqual(lastAddedBarTimestamp.plus(getDelayBetweenTwoBars()))
-                    || ticker.getTimestamp().isAfter(lastAddedBarTimestamp.plus(getDelayBetweenTwoBars()))) {
+            if (isDelayBetweenBarsExceeded(ticker)) {
 
                 // Add the ticker to the series.
-                Number openPrice = MoreObjects.firstNonNull(ticker.getOpen(), 0);
-                Number highPrice = MoreObjects.firstNonNull(ticker.getHigh(), 0);
-                Number lowPrice = MoreObjects.firstNonNull(ticker.getLow(), 0);
+                Number openPrice = MoreObjects.firstNonNull(ticker.getOpen(), ticker.getLast());
+                Number highPrice = MoreObjects.firstNonNull(ticker.getHigh(), ticker.getLast());
+                Number lowPrice = MoreObjects.firstNonNull(ticker.getLow(), ticker.getLast());
                 Number closePrice = MoreObjects.firstNonNull(ticker.getLast(), 0);
                 Number volume = MoreObjects.firstNonNull(ticker.getVolume(), 0);
                 series.addBar(ticker.getTimestamp(), openPrice, highPrice, lowPrice, closePrice, volume);
@@ -109,9 +107,26 @@ public abstract class BasicTa4jCassandreStrategy extends GenericCassandreStrateg
                     // Our strategy should exit.
                     shouldExit();
                 }
+            } else {
+                Number openPrice = MoreObjects.firstNonNull(ticker.getOpen(), ticker.getLast());
+                Number highPrice = MoreObjects.firstNonNull(ticker.getHigh(), ticker.getLast());
+                Number lowPrice = MoreObjects.firstNonNull(ticker.getLow(), ticker.getLast());
+                Number closePrice = MoreObjects.firstNonNull(ticker.getLast(), 0);
+                Number volume = MoreObjects.firstNonNull(ticker.getVolume(), 0);
+                series.addPrice(openPrice);
+                series.addPrice(highPrice);
+                series.addPrice(lowPrice);
+                series.addTrade(volume, closePrice);
+                lastAddedBarTimestamp = ticker.getTimestamp();
             }
             onTickerUpdate(ticker);
         }
+    }
+
+    private boolean isDelayBetweenBarsExceeded(TickerDTO ticker) {
+        return lastAddedBarTimestamp == null
+                || ticker.getTimestamp().isEqual(lastAddedBarTimestamp.plus(getDelayBetweenTwoBars()))
+                || ticker.getTimestamp().isAfter(lastAddedBarTimestamp.plus(getDelayBetweenTwoBars()));
     }
 
     /**
