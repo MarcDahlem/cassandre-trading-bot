@@ -1,10 +1,9 @@
 package tech.cassandre.trading.bot.strategy;
 
 import com.google.common.base.MoreObjects;
-import org.ta4j.core.BarSeries;
-import org.ta4j.core.BaseBarSeriesBuilder;
-import org.ta4j.core.Strategy;
+import org.ta4j.core.*;
 import org.ta4j.core.num.DoubleNum;
+import org.ta4j.core.num.Num;
 import tech.cassandre.trading.bot.dto.market.TickerDTO;
 import tech.cassandre.trading.bot.dto.user.AccountDTO;
 import tech.cassandre.trading.bot.dto.util.CurrencyPairDTO;
@@ -86,16 +85,15 @@ public abstract class BasicTa4jCassandreStrategy extends GenericCassandreStrateg
         // In multi strategies, all tickers are delivered to all strategies, so we filter in here.
         if (getRequestedCurrencyPairs().contains(ticker.getCurrencyPair())) {
             getLastTickers().put(ticker.getCurrencyPair(), ticker);
+
+            BigDecimal openPrice = MoreObjects.firstNonNull(ticker.getOpen(), ticker.getLast());
+            BigDecimal highPrice = MoreObjects.firstNonNull(ticker.getHigh(), ticker.getLast());
+            BigDecimal lowPrice = MoreObjects.firstNonNull(ticker.getLow(), ticker.getLast());
+            BigDecimal closePrice = MoreObjects.firstNonNull(ticker.getLast(), BigDecimal.ZERO);
+            BigDecimal volume = MoreObjects.firstNonNull(ticker.getVolume(), BigDecimal.ZERO);
             // If there is no bar or if the duration between the last bar and the ticker is enough.
             if (isDelayBetweenBarsExceeded(ticker)) {
-
-                // Add the ticker to the series.
-                Number openPrice = MoreObjects.firstNonNull(ticker.getOpen(), ticker.getLast());
-                Number highPrice = MoreObjects.firstNonNull(ticker.getHigh(), ticker.getLast());
-                Number lowPrice = MoreObjects.firstNonNull(ticker.getLow(), ticker.getLast());
-                Number closePrice = MoreObjects.firstNonNull(ticker.getLast(), 0);
-                Number volume = MoreObjects.firstNonNull(ticker.getVolume(), 0);
-                series.addBar(ticker.getTimestamp(), openPrice, highPrice, lowPrice, closePrice, volume);
+                series.addBar(Duration.ZERO, ticker.getTimestamp(), openPrice, highPrice, lowPrice, closePrice, volume);
                 lastAddedBarTimestamp = ticker.getTimestamp();
 
                 // Ask what to do to the strategy.
@@ -108,15 +106,13 @@ public abstract class BasicTa4jCassandreStrategy extends GenericCassandreStrateg
                     shouldExit();
                 }
             } else {
-                Number openPrice = MoreObjects.firstNonNull(ticker.getOpen(), ticker.getLast());
-                Number highPrice = MoreObjects.firstNonNull(ticker.getHigh(), ticker.getLast());
-                Number lowPrice = MoreObjects.firstNonNull(ticker.getLow(), ticker.getLast());
-                Number closePrice = MoreObjects.firstNonNull(ticker.getLast(), 0);
-                Number volume = MoreObjects.firstNonNull(ticker.getVolume(), 0);
-                series.addPrice(openPrice);
-                series.addPrice(highPrice);
-                series.addPrice(lowPrice);
-                series.addTrade(volume, closePrice);
+                Bar barToUpdate = series.getLastBar();
+                Duration barDuration = Duration.between(barToUpdate.getBeginTime(), ticker.getTimestamp());
+                Num newHighPrice = barToUpdate.getHighPrice().max(series.numOf(highPrice));
+                Num newLowPrice = barToUpdate.getLowPrice().min(series.numOf(lowPrice));
+                Num newVolume = barToUpdate.getVolume().plus(series.numOf(volume));
+                Bar updatedBar = new BaseBar(barDuration, ticker.getTimestamp(), barToUpdate.getOpenPrice(), newHighPrice, newLowPrice, series.numOf(closePrice), newVolume, series.numOf(0));
+                series.addBar(updatedBar, true);
                 lastAddedBarTimestamp = ticker.getTimestamp();
             }
             onTickerUpdate(ticker);
